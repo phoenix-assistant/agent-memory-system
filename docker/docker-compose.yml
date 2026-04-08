@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # Local development with SQLite + ChromaDB
+  memory-local:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    volumes:
+      - memory-data:/data
+    environment:
+      - AGENT_MEMORY_SQLITE_PATH=/data/memory.db
+      - AGENT_MEMORY_CHROMA_PATH=/data/chroma
+    profiles:
+      - local
+
+  # Server deployment with PostgreSQL + Qdrant
+  memory-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    depends_on:
+      - postgres
+      - qdrant
+    environment:
+      - AGENT_MEMORY_STORAGE_BACKEND=postgres
+      - AGENT_MEMORY_POSTGRES_URL=postgresql://memory:memory@postgres:5432/memory
+      - AGENT_MEMORY_VECTOR_BACKEND=qdrant
+      - AGENT_MEMORY_QDRANT_URL=http://qdrant:6333
+    profiles:
+      - server
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: memory
+      POSTGRES_PASSWORD: memory
+      POSTGRES_DB: memory
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    profiles:
+      - server
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrant-data:/qdrant/storage
+    ports:
+      - "6333:6333"
+    profiles:
+      - server
+
+volumes:
+  memory-data:
+  postgres-data:
+  qdrant-data:
