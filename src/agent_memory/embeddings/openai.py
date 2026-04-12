@@ -20,7 +20,7 @@ OPENAI_DIMENSIONS = {
 
 class OpenAIBackend(EmbeddingBackend):
     """OpenAI embeddings API backend."""
-    
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -28,20 +28,20 @@ class OpenAIBackend(EmbeddingBackend):
     ) -> None:
         self.model = model
         self._api_key = api_key
-        self._client: "AsyncOpenAI | None" = None
-    
-    def _ensure_client(self) -> "AsyncOpenAI":
+        self._client: AsyncOpenAI | None = None
+
+    def _ensure_client(self) -> AsyncOpenAI:
         """Lazily create the client."""
         if self._client is None:
             from openai import AsyncOpenAI
             self._client = AsyncOpenAI(api_key=self._api_key)
         return self._client
-    
+
     @property
     def dimensions(self) -> int:
         """Get embedding dimensions."""
         return OPENAI_DIMENSIONS.get(self.model, 1536)
-    
+
     async def embed(self, text: str) -> list[float]:
         """Generate embedding for a single text."""
         client = self._ensure_client()
@@ -50,19 +50,19 @@ class OpenAIBackend(EmbeddingBackend):
             input=text,
         )
         return response.data[0].embedding
-    
+
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for multiple texts."""
         if not texts:
             return []
-        
+
         client = self._ensure_client()
-        
+
         # OpenAI API has a limit of ~8k tokens per request
         # For safety, batch in groups of 100
         all_embeddings: list[list[float]] = []
         batch_size = 100
-        
+
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
             response = await client.embeddings.create(
@@ -72,9 +72,9 @@ class OpenAIBackend(EmbeddingBackend):
             # Sort by index to maintain order
             sorted_data = sorted(response.data, key=lambda x: x.index)
             all_embeddings.extend([d.embedding for d in sorted_data])
-        
+
         return all_embeddings
-    
+
     async def close(self) -> None:
         """Close the client."""
         if self._client:

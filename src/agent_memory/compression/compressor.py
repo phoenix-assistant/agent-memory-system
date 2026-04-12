@@ -39,7 +39,7 @@ Respond with only the JSON object."""
 
 class MemoryCompressor:
     """Compresses multiple memories into summaries using LLM."""
-    
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -47,30 +47,30 @@ class MemoryCompressor:
     ) -> None:
         self.model = model
         self._api_key = api_key
-        self._client: "AsyncOpenAI | None" = None
-    
-    def _ensure_client(self) -> "AsyncOpenAI":
+        self._client: AsyncOpenAI | None = None
+
+    def _ensure_client(self) -> AsyncOpenAI:
         """Lazily create the client."""
         if self._client is None:
             from openai import AsyncOpenAI
             self._client = AsyncOpenAI(api_key=self._api_key)
         return self._client
-    
+
     async def compress(
         self,
         memories: list[MemoryEntry],
     ) -> CompressionResult:
         """Compress multiple memories into a single summary.
-        
+
         Args:
             memories: List of memories to compress
-            
+
         Returns:
             CompressionResult with the compressed memory and metadata
         """
         if not memories:
             raise ValueError("Cannot compress empty memory list")
-        
+
         if len(memories) == 1:
             # Nothing to compress
             return CompressionResult(
@@ -79,9 +79,9 @@ class MemoryCompressor:
                 compression_ratio=1.0,
                 preserved_facts=[memories[0].content],
             )
-        
+
         client = self._ensure_client()
-        
+
         # Format memories for the prompt
         memory_texts = []
         for i, mem in enumerate(memories, 1):
@@ -89,9 +89,9 @@ class MemoryCompressor:
                 f"{i}. [{mem.memory_type.value}] (importance: {mem.importance:.2f}, "
                 f"confidence: {mem.confidence:.2f}): {mem.content}"
             )
-        
+
         formatted_memories = "\n".join(memory_texts)
-        
+
         response = await client.chat.completions.create(
             model=self.model,
             messages=[
@@ -107,19 +107,19 @@ class MemoryCompressor:
             response_format={"type": "json_object"},
             temperature=0.3,
         )
-        
+
         result = json.loads(response.choices[0].message.content or "{}")
-        
+
         # Calculate metrics
         original_chars = sum(len(m.content) for m in memories)
         compressed_chars = len(result.get("content", ""))
         compression_ratio = compressed_chars / original_chars if original_chars > 0 else 1.0
-        
+
         # Collect all tags from source memories
         all_tags = set()
         for mem in memories:
             all_tags.update(mem.tags)
-        
+
         # Create compressed memory
         compressed = MemoryEntry(
             content=result.get("content", ""),
@@ -131,14 +131,14 @@ class MemoryCompressor:
             is_compressed=True,
             source_memories=[m.id for m in memories],
         )
-        
+
         return CompressionResult(
             compressed_memory=compressed,
             source_ids=[m.id for m in memories],
             compression_ratio=compression_ratio,
             preserved_facts=result.get("preserved_facts", []),
         )
-    
+
     async def should_compress(
         self,
         memories: list[MemoryEntry],
@@ -146,28 +146,25 @@ class MemoryCompressor:
         max_importance: float = 0.7,
     ) -> bool:
         """Determine if a set of memories should be compressed.
-        
+
         Args:
             memories: Memories to evaluate
             min_memories: Minimum count to consider compression
             max_importance: Don't compress if any memory exceeds this importance
-            
+
         Returns:
             True if compression is recommended
         """
         if len(memories) < min_memories:
             return False
-        
+
         # Don't compress if any memory is very important
         if any(m.importance > max_importance for m in memories):
             return False
-        
+
         # Don't compress corrections
-        if any(m.memory_type == MemoryType.CORRECTION for m in memories):
-            return False
-        
-        return True
-    
+        return not any(m.memory_type == MemoryType.CORRECTION for m in memories)
+
     async def close(self) -> None:
         """Close the client."""
         if self._client:

@@ -13,7 +13,7 @@ from agent_memory.backends.base import VectorBackend
 
 class ChromaBackend(VectorBackend):
     """ChromaDB-based vector storage and search."""
-    
+
     def __init__(
         self,
         path: Path | str | None = None,
@@ -23,7 +23,7 @@ class ChromaBackend(VectorBackend):
         self.collection_name = collection_name
         self._client: chromadb.Client | None = None
         self._collection: chromadb.Collection | None = None
-    
+
     async def initialize(self) -> None:
         """Initialize ChromaDB client and collection."""
         if self.path:
@@ -43,22 +43,22 @@ class ChromaBackend(VectorBackend):
                     allow_reset=True,
                 ),
             )
-        
+
         self._collection = self._client.get_or_create_collection(
             name=self.collection_name,
             metadata={"hnsw:space": "cosine"},
         )
-    
+
     async def close(self) -> None:
         """ChromaDB doesn't need explicit close."""
         pass
-    
+
     @property
     def collection(self) -> chromadb.Collection:
         if not self._collection:
             raise RuntimeError("ChromaDB not initialized. Call initialize() first.")
         return self._collection
-    
+
     async def add(
         self,
         memory_id: str,
@@ -71,7 +71,7 @@ class ChromaBackend(VectorBackend):
             embeddings=[embedding],
             metadatas=[metadata] if metadata else None,
         )
-    
+
     async def update(
         self,
         memory_id: str,
@@ -84,7 +84,7 @@ class ChromaBackend(VectorBackend):
             embeddings=[embedding],
             metadatas=[metadata] if metadata else None,
         )
-    
+
     async def delete(self, memory_id: str) -> bool:
         """Delete a vector by ID."""
         try:
@@ -92,7 +92,7 @@ class ChromaBackend(VectorBackend):
             return True
         except Exception:
             return False
-    
+
     async def search(
         self,
         query_embedding: list[float],
@@ -107,16 +107,16 @@ class ChromaBackend(VectorBackend):
             where=filter_metadata,
             include=["distances"],
         )
-        
+
         ids = results["ids"][0] if results["ids"] else []
         # ChromaDB returns distances, convert to similarity scores
         distances = results["distances"][0] if results["distances"] else []
-        
+
         # Cosine distance to similarity: 1 - distance
         scores = [1 - d for d in distances]
-        
+
         return list(zip(ids, scores))
-    
+
     async def get_embedding(self, memory_id: str) -> list[float] | None:
         """Get the embedding for a memory ID."""
         try:
@@ -129,11 +129,11 @@ class ChromaBackend(VectorBackend):
             return None
         except Exception:
             return None
-    
+
     async def count(self) -> int:
         """Get total number of vectors."""
         return self.collection.count()
-    
+
     async def reset(self) -> None:
         """Clear all vectors (useful for testing)."""
         if self._client:

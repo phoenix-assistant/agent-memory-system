@@ -11,37 +11,37 @@ if TYPE_CHECKING:
 
 class StorageBackend(ABC):
     """Abstract base for metadata/document storage."""
-    
+
     @abstractmethod
     async def initialize(self) -> None:
         """Initialize the storage backend (create tables, etc.)."""
         ...
-    
+
     @abstractmethod
     async def close(self) -> None:
         """Close connections and cleanup."""
         ...
-    
+
     @abstractmethod
     async def store(self, memory: MemoryEntry) -> str:
         """Store a memory entry. Returns the memory ID."""
         ...
-    
+
     @abstractmethod
     async def get(self, memory_id: str) -> MemoryEntry | None:
         """Get a memory by ID."""
         ...
-    
+
     @abstractmethod
     async def update(self, memory: MemoryEntry) -> None:
         """Update an existing memory."""
         ...
-    
+
     @abstractmethod
     async def delete(self, memory_id: str) -> bool:
         """Delete a memory by ID. Returns True if deleted."""
         ...
-    
+
     @abstractmethod
     async def list(
         self,
@@ -53,12 +53,12 @@ class StorageBackend(ABC):
     ) -> list[MemoryEntry]:
         """List memories with optional filtering."""
         ...
-    
+
     @abstractmethod
     async def get_by_ids(self, ids: list[str]) -> list[MemoryEntry]:
         """Get multiple memories by their IDs."""
         ...
-    
+
     @abstractmethod
     async def search_text(
         self,
@@ -68,12 +68,12 @@ class StorageBackend(ABC):
     ) -> list[tuple[MemoryEntry, float]]:
         """Full-text search. Returns (memory, score) tuples."""
         ...
-    
+
     @abstractmethod
     async def get_stats(self) -> MemoryStats:
         """Get storage statistics."""
         ...
-    
+
     @abstractmethod
     async def get_stale_memories(
         self,
@@ -86,17 +86,17 @@ class StorageBackend(ABC):
 
 class VectorBackend(ABC):
     """Abstract base for vector similarity search."""
-    
+
     @abstractmethod
     async def initialize(self) -> None:
         """Initialize the vector backend."""
         ...
-    
+
     @abstractmethod
     async def close(self) -> None:
         """Close connections and cleanup."""
         ...
-    
+
     @abstractmethod
     async def add(
         self,
@@ -106,7 +106,7 @@ class VectorBackend(ABC):
     ) -> None:
         """Add a vector to the index."""
         ...
-    
+
     @abstractmethod
     async def update(
         self,
@@ -116,12 +116,12 @@ class VectorBackend(ABC):
     ) -> None:
         """Update a vector in the index."""
         ...
-    
+
     @abstractmethod
     async def delete(self, memory_id: str) -> bool:
         """Delete a vector by ID."""
         ...
-    
+
     @abstractmethod
     async def search(
         self,
@@ -132,7 +132,7 @@ class VectorBackend(ABC):
     ) -> list[tuple[str, float]]:
         """Search for similar vectors. Returns (id, score) tuples."""
         ...
-    
+
     @abstractmethod
     async def get_embedding(self, memory_id: str) -> list[float] | None:
         """Get the embedding for a memory ID."""

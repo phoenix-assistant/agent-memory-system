@@ -12,7 +12,6 @@ from agent_memory.core.config import MemoryConfig
 from agent_memory.core.memory import Memory
 from agent_memory.core.models import MemoryType, SurfacingContext
 
-
 # MCP tool definitions
 TOOLS = [
     {
@@ -130,38 +129,38 @@ TOOLS = [
 
 class MCPMemoryServer:
     """MCP server wrapping the Memory system."""
-    
+
     def __init__(self, config: MemoryConfig | None = None) -> None:
         self.config = config or MemoryConfig.local_default()
         self._memory: Memory | None = None
-    
+
     async def initialize(self) -> None:
         """Initialize the memory system."""
         self._memory = Memory(self.config)
         await self._memory.initialize()
-    
+
     async def close(self) -> None:
         """Close the memory system."""
         if self._memory:
             await self._memory.close()
-    
+
     @property
     def memory(self) -> Memory:
         if not self._memory:
             raise RuntimeError("Server not initialized")
         return self._memory
-    
+
     def list_tools(self) -> list[dict[str, Any]]:
         """Return available tools."""
         return TOOLS
-    
+
     async def call_tool(
         self,
         name: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
         """Execute a tool and return results."""
-        
+
         if name == "memory_add":
             entry = await self.memory.add(
                 content=arguments["content"],
@@ -174,7 +173,7 @@ class MCPMemoryServer:
                 "memory_id": entry.id,
                 "content": entry.content,
             }
-        
+
         elif name == "memory_search":
             results = await self.memory.search(
                 query=arguments["query"],
@@ -195,7 +194,7 @@ class MCPMemoryServer:
                     for r in results
                 ]
             }
-        
+
         elif name == "memory_correct":
             entry = await self.memory.correct(
                 correction=arguments["correction"],
@@ -207,7 +206,7 @@ class MCPMemoryServer:
                 "correction_id": entry.id,
                 "affected_memories": entry.corrects,
             }
-        
+
         elif name == "memory_surface":
             ctx = SurfacingContext(
                 query=arguments["context"],
@@ -224,7 +223,7 @@ class MCPMemoryServer:
                     for m in memories
                 ]
             }
-        
+
         elif name == "memory_stats":
             stats = await self.memory.stats()
             return {
@@ -233,7 +232,7 @@ class MCPMemoryServer:
                 "compressed": stats.compressed_memories,
                 "by_type": stats.memories_by_type,
             }
-        
+
         else:
             return {"error": f"Unknown tool: {name}"}
 
@@ -246,27 +245,27 @@ def create_server(config: MemoryConfig | None = None) -> MCPMemoryServer:
 # Stdio transport for MCP
 async def run_stdio_server(config: MemoryConfig | None = None) -> None:
     """Run the MCP server over stdio.
-    
+
     This is the entry point when running as: agent-memory-mcp
     """
     import sys
-    
+
     server = create_server(config)
     await server.initialize()
-    
+
     try:
         # Read JSON-RPC messages from stdin
         while True:
             line = sys.stdin.readline()
             if not line:
                 break
-            
+
             try:
                 request = json.loads(line)
                 method = request.get("method", "")
                 params = request.get("params", {})
                 request_id = request.get("id")
-                
+
                 if method == "initialize":
                     response = {
                         "jsonrpc": "2.0",
@@ -282,7 +281,7 @@ async def run_stdio_server(config: MemoryConfig | None = None) -> None:
                             }
                         }
                     }
-                
+
                 elif method == "tools/list":
                     response = {
                         "jsonrpc": "2.0",
@@ -291,7 +290,7 @@ async def run_stdio_server(config: MemoryConfig | None = None) -> None:
                             "tools": server.list_tools()
                         }
                     }
-                
+
                 elif method == "tools/call":
                     tool_name = params.get("name", "")
                     tool_args = params.get("arguments", {})
@@ -308,7 +307,7 @@ async def run_stdio_server(config: MemoryConfig | None = None) -> None:
                             ]
                         }
                     }
-                
+
                 else:
                     response = {
                         "jsonrpc": "2.0",
@@ -318,13 +317,13 @@ async def run_stdio_server(config: MemoryConfig | None = None) -> None:
                             "message": f"Method not found: {method}"
                         }
                     }
-                
+
                 sys.stdout.write(json.dumps(response) + "\n")
                 sys.stdout.flush()
-                
+
             except json.JSONDecodeError:
                 pass
-    
+
     finally:
         await server.close()
 

@@ -15,17 +15,17 @@ if TYPE_CHECKING:
 
 class PostgresBackend(StorageBackend):
     """PostgreSQL-based storage for memory entries."""
-    
+
     def __init__(self, connection_url: str) -> None:
         self.connection_url = connection_url
         self._pool: asyncpg.Pool | None = None
-    
+
     async def initialize(self) -> None:
         """Create database pool and tables."""
         import asyncpg
-        
+
         self._pool = await asyncpg.create_pool(self.connection_url)
-        
+
         async with self._pool.acquire() as conn:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS memories (
@@ -47,30 +47,30 @@ class PostgresBackend(StorageBackend):
                     is_compressed BOOLEAN DEFAULT FALSE,
                     source_memories JSONB DEFAULT '[]'
                 );
-                
+
                 CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type);
                 CREATE INDEX IF NOT EXISTS idx_memories_accessed ON memories(accessed_at);
                 CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
                 CREATE INDEX IF NOT EXISTS idx_memories_compressed ON memories(is_compressed);
                 CREATE INDEX IF NOT EXISTS idx_memories_tags ON memories USING GIN(tags);
-                
+
                 -- Full-text search
-                CREATE INDEX IF NOT EXISTS idx_memories_content_fts 
+                CREATE INDEX IF NOT EXISTS idx_memories_content_fts
                     ON memories USING GIN(to_tsvector('english', content));
             """)
-    
+
     async def close(self) -> None:
         """Close connection pool."""
         if self._pool:
             await self._pool.close()
             self._pool = None
-    
+
     @property
-    def pool(self) -> "asyncpg.Pool":
+    def pool(self) -> asyncpg.Pool:
         if not self._pool:
             raise RuntimeError("Database not initialized. Call initialize() first.")
         return self._pool
-    
+
     def _row_to_memory(self, row: dict) -> MemoryEntry:
         """Convert database row to MemoryEntry."""
         return MemoryEntry(
@@ -92,7 +92,7 @@ class PostgresBackend(StorageBackend):
             is_compressed=row["is_compressed"],
             source_memories=row["source_memories"],
         )
-    
+
     async def store(self, memory: MemoryEntry) -> str:
         """Store a memory entry."""
         async with self.pool.acquire() as conn:
@@ -125,7 +125,7 @@ class PostgresBackend(StorageBackend):
                 json.dumps(memory.source_memories),
             )
         return memory.id
-    
+
     async def get(self, memory_id: str) -> MemoryEntry | None:
         """Get a memory by ID."""
         async with self.pool.acquire() as conn:
@@ -136,7 +136,7 @@ class PostgresBackend(StorageBackend):
             if row is None:
                 return None
             return self._row_to_memory(dict(row))
-    
+
     async def update(self, memory: MemoryEntry) -> None:
         """Update an existing memory."""
         memory.updated_at = datetime.utcnow()
@@ -168,7 +168,7 @@ class PostgresBackend(StorageBackend):
                 json.dumps(memory.source_memories),
                 memory.id,
             )
-    
+
     async def delete(self, memory_id: str) -> bool:
         """Delete a memory by ID."""
         async with self.pool.acquire() as conn:
@@ -177,7 +177,7 @@ class PostgresBackend(StorageBackend):
                 memory_id,
             )
             return result == "DELETE 1"
-    
+
     async def list(
         self,
         *,
@@ -190,30 +190,30 @@ class PostgresBackend(StorageBackend):
         query = "SELECT * FROM memories WHERE TRUE"
         params: list = []
         param_count = 0
-        
+
         if memory_type:
             param_count += 1
             query += f" AND memory_type = ${param_count}"
             params.append(memory_type)
-        
+
         if tags:
             for tag in tags:
                 param_count += 1
                 query += f" AND tags ? ${param_count}"
                 params.append(tag)
-        
+
         param_count += 1
         query += f" ORDER BY updated_at DESC LIMIT ${param_count}"
         params.append(limit)
-        
+
         param_count += 1
         query += f" OFFSET ${param_count}"
         params.append(offset)
-        
+
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
             return [self._row_to_memory(dict(row)) for row in rows]
-    
+
     async def get_by_ids(self, ids: list[str]) -> list[MemoryEntry]:
         """Get multiple memories by their IDs."""
         if not ids:
@@ -224,7 +224,7 @@ class PostgresBackend(StorageBackend):
                 ids,
             )
             return [self._row_to_memory(dict(row)) for row in rows]
-    
+
     async def search_text(
         self,
         query: str,
@@ -245,39 +245,39 @@ class PostgresBackend(StorageBackend):
                 limit,
             )
             return [(self._row_to_memory(dict(row)), row["score"]) for row in rows]
-    
+
     async def get_stats(self) -> MemoryStats:
         """Get storage statistics."""
         async with self.pool.acquire() as conn:
             total = await conn.fetchval("SELECT COUNT(*) FROM memories")
-            
+
             by_type_rows = await conn.fetch(
                 "SELECT memory_type, COUNT(*) FROM memories GROUP BY memory_type"
             )
             by_type = {row["memory_type"]: row["count"] for row in by_type_rows}
-            
+
             corrections = await conn.fetchval(
                 "SELECT COUNT(*) FROM memories WHERE memory_type = 'correction'"
             )
-            
+
             compressed = await conn.fetchval(
                 "SELECT COUNT(*) FROM memories WHERE is_compressed = TRUE"
             )
-            
+
             avg_importance = await conn.fetchval(
                 "SELECT AVG(importance) FROM memories"
             ) or 0.0
-            
+
             date_row = await conn.fetchrow(
                 "SELECT MIN(created_at), MAX(created_at) FROM memories"
             )
             oldest = date_row[0] if date_row else None
             newest = date_row[1] if date_row else None
-            
+
             storage_bytes = await conn.fetchval(
                 "SELECT pg_total_relation_size('memories')"
             ) or 0
-            
+
             return MemoryStats(
                 total_memories=total or 0,
                 memories_by_type=by_type,
@@ -288,7 +288,7 @@ class PostgresBackend(StorageBackend):
                 newest_memory=newest,
                 storage_bytes=storage_bytes,
             )
-    
+
     async def get_stale_memories(
         self,
         days_threshold: int,
@@ -296,12 +296,12 @@ class PostgresBackend(StorageBackend):
     ) -> list[list[MemoryEntry]]:
         """Get clusters of stale memories for compression."""
         threshold = datetime.utcnow() - timedelta(days=days_threshold)
-        
+
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT * FROM memories 
-                WHERE accessed_at < $1 
+                SELECT * FROM memories
+                WHERE accessed_at < $1
                 AND is_compressed = FALSE
                 AND memory_type != 'correction'
                 ORDER BY tags, created_at
@@ -309,7 +309,7 @@ class PostgresBackend(StorageBackend):
                 threshold,
             )
             memories = [self._row_to_memory(dict(row)) for row in rows]
-        
+
         # Simple clustering by tags
         clusters: dict[str, list[MemoryEntry]] = {}
         for memory in memories:
@@ -317,5 +317,5 @@ class PostgresBackend(StorageBackend):
             if key not in clusters:
                 clusters[key] = []
             clusters[key].append(memory)
-        
+
         return [mems for mems in clusters.values() if len(mems) >= min_count]

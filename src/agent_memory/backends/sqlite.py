@@ -18,17 +18,17 @@ if TYPE_CHECKING:
 
 class SQLiteBackend(StorageBackend):
     """SQLite-based storage for memory entries."""
-    
+
     def __init__(self, db_path: Path | str) -> None:
         self.db_path = Path(db_path)
         self._conn: aiosqlite.Connection | None = None
-    
+
     async def initialize(self) -> None:
         """Create database and tables."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = await aiosqlite.connect(self.db_path)
         self._conn.row_factory = aiosqlite.Row
-        
+
         await self._conn.executescript("""
             -- Main memories table
             CREATE TABLE IF NOT EXISTS memories (
@@ -50,13 +50,13 @@ class SQLiteBackend(StorageBackend):
                 is_compressed INTEGER DEFAULT 0,
                 source_memories TEXT DEFAULT '[]'
             );
-            
+
             -- Indexes for common queries
             CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type);
             CREATE INDEX IF NOT EXISTS idx_memories_accessed ON memories(accessed_at);
             CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
             CREATE INDEX IF NOT EXISTS idx_memories_compressed ON memories(is_compressed);
-            
+
             -- Full-text search
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
                 id,
@@ -65,39 +65,39 @@ class SQLiteBackend(StorageBackend):
                 content='memories',
                 content_rowid='rowid'
             );
-            
+
             -- Triggers to keep FTS in sync
             CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-                INSERT INTO memories_fts(id, content, tags) 
+                INSERT INTO memories_fts(id, content, tags)
                 VALUES (new.id, new.content, new.tags);
             END;
-            
+
             CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, id, content, tags) 
+                INSERT INTO memories_fts(memories_fts, id, content, tags)
                 VALUES ('delete', old.id, old.content, old.tags);
             END;
-            
+
             CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, id, content, tags) 
+                INSERT INTO memories_fts(memories_fts, id, content, tags)
                 VALUES ('delete', old.id, old.content, old.tags);
-                INSERT INTO memories_fts(id, content, tags) 
+                INSERT INTO memories_fts(id, content, tags)
                 VALUES (new.id, new.content, new.tags);
             END;
         """)
         await self._conn.commit()
-    
+
     async def close(self) -> None:
         """Close database connection."""
         if self._conn:
             await self._conn.close()
             self._conn = None
-    
+
     @property
     def conn(self) -> aiosqlite.Connection:
         if not self._conn:
             raise RuntimeError("Database not initialized. Call initialize() first.")
         return self._conn
-    
+
     def _row_to_memory(self, row: aiosqlite.Row) -> MemoryEntry:
         """Convert database row to MemoryEntry."""
         return MemoryEntry(
@@ -119,7 +119,7 @@ class SQLiteBackend(StorageBackend):
             is_compressed=bool(row["is_compressed"]),
             source_memories=json.loads(row["source_memories"]),
         )
-    
+
     async def store(self, memory: MemoryEntry) -> str:
         """Store a memory entry."""
         await self.conn.execute(
@@ -154,7 +154,7 @@ class SQLiteBackend(StorageBackend):
         )
         await self.conn.commit()
         return memory.id
-    
+
     async def get(self, memory_id: str) -> MemoryEntry | None:
         """Get a memory by ID."""
         cursor = await self.conn.execute(
@@ -165,7 +165,7 @@ class SQLiteBackend(StorageBackend):
         if row is None:
             return None
         return self._row_to_memory(row)
-    
+
     async def update(self, memory: MemoryEntry) -> None:
         """Update an existing memory."""
         memory.updated_at = datetime.utcnow()
@@ -199,7 +199,7 @@ class SQLiteBackend(StorageBackend):
             ),
         )
         await self.conn.commit()
-    
+
     async def delete(self, memory_id: str) -> bool:
         """Delete a memory by ID."""
         cursor = await self.conn.execute(
@@ -208,7 +208,7 @@ class SQLiteBackend(StorageBackend):
         )
         await self.conn.commit()
         return cursor.rowcount > 0
-    
+
     async def list(
         self,
         *,
@@ -220,23 +220,23 @@ class SQLiteBackend(StorageBackend):
         """List memories with optional filtering."""
         query = "SELECT * FROM memories WHERE 1=1"
         params: list = []
-        
+
         if memory_type:
             query += " AND memory_type = ?"
             params.append(memory_type)
-        
+
         if tags:
             for tag in tags:
                 query += " AND tags LIKE ?"
                 params.append(f'%"{tag}"%')
-        
+
         query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
-        
+
         cursor = await self.conn.execute(query, params)
         rows = await cursor.fetchall()
         return [self._row_to_memory(row) for row in rows]
-    
+
     async def get_by_ids(self, ids: list[str]) -> list[MemoryEntry]:
         """Get multiple memories by their IDs."""
         if not ids:
@@ -248,7 +248,7 @@ class SQLiteBackend(StorageBackend):
         )
         rows = await cursor.fetchall()
         return [self._row_to_memory(row) for row in rows]
-    
+
     async def search_text(
         self,
         query: str,
@@ -275,35 +275,35 @@ class SQLiteBackend(StorageBackend):
             score = -row["score"] if row["score"] else 0.0
             results.append((memory, score))
         return results
-    
+
     async def get_stats(self) -> MemoryStats:
         """Get storage statistics."""
         # Total count
         cursor = await self.conn.execute("SELECT COUNT(*) FROM memories")
         total = (await cursor.fetchone())[0]
-        
+
         # By type
         cursor = await self.conn.execute(
             "SELECT memory_type, COUNT(*) FROM memories GROUP BY memory_type"
         )
         by_type = {row[0]: row[1] for row in await cursor.fetchall()}
-        
+
         # Corrections
         cursor = await self.conn.execute(
             "SELECT COUNT(*) FROM memories WHERE memory_type = 'correction'"
         )
         corrections = (await cursor.fetchone())[0]
-        
+
         # Compressed
         cursor = await self.conn.execute(
             "SELECT COUNT(*) FROM memories WHERE is_compressed = 1"
         )
         compressed = (await cursor.fetchone())[0]
-        
+
         # Average importance
         cursor = await self.conn.execute("SELECT AVG(importance) FROM memories")
         avg_importance = (await cursor.fetchone())[0] or 0.0
-        
+
         # Date range
         cursor = await self.conn.execute(
             "SELECT MIN(created_at), MAX(created_at) FROM memories"
@@ -311,11 +311,11 @@ class SQLiteBackend(StorageBackend):
         row = await cursor.fetchone()
         oldest = datetime.fromisoformat(row[0]) if row[0] else None
         newest = datetime.fromisoformat(row[1]) if row[1] else None
-        
+
         # Storage size
         import os
         storage_bytes = os.path.getsize(self.db_path) if self.db_path.exists() else 0
-        
+
         return MemoryStats(
             total_memories=total,
             memories_by_type=by_type,
@@ -326,24 +326,24 @@ class SQLiteBackend(StorageBackend):
             newest_memory=newest,
             storage_bytes=storage_bytes,
         )
-    
+
     async def get_stale_memories(
         self,
         days_threshold: int,
         min_count: int,
     ) -> list[list[MemoryEntry]]:
         """Get clusters of stale memories for compression.
-        
+
         Returns memories grouped by similar tags/topics that are older than threshold.
         """
         threshold = datetime.utcnow()
         from datetime import timedelta
         threshold = threshold - timedelta(days=days_threshold)
-        
+
         cursor = await self.conn.execute(
             """
-            SELECT * FROM memories 
-            WHERE accessed_at < ? 
+            SELECT * FROM memories
+            WHERE accessed_at < ?
             AND is_compressed = 0
             AND memory_type != 'correction'
             ORDER BY tags, created_at
@@ -352,7 +352,7 @@ class SQLiteBackend(StorageBackend):
         )
         rows = await cursor.fetchall()
         memories = [self._row_to_memory(row) for row in rows]
-        
+
         # Simple clustering by tags
         clusters: dict[str, list[MemoryEntry]] = {}
         for memory in memories:
@@ -360,6 +360,6 @@ class SQLiteBackend(StorageBackend):
             if key not in clusters:
                 clusters[key] = []
             clusters[key].append(memory)
-        
+
         # Only return clusters with enough memories
         return [mems for mems in clusters.values() if len(mems) >= min_count]
